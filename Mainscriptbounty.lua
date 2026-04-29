@@ -4,7 +4,7 @@ repeat task.wait() until game:IsLoaded()
     and game.Players.LocalPlayer:FindFirstChild("PlayerGui")
 _G.SeleneCFG = {
     Team          = "Pirates",   -- "Pirates" or "Marines" choose team
-    Region        = "singapore", -- choose sever
+    Region        = "Singapore", -- choose sever
     WebhookURL    = "",
     DiscordID     = "",
     SuperBoostFps      = true, -- setting false if want see all
