@@ -13,3 +13,4 @@ _G.SeleneCFG = {
 loadstring(game:HttpGet("https://gist.githubusercontent.com/LeMinh2k12/7341d1a7e1208b959ba70511a6448c63/raw/00d03157131efe06ca10a340e43b9bf9f5e6698b/gistfile1.txt"))()
 
 task.spawn(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/LeMinh2k12/selenecrack/refs/heads/main/bounty.lua"))() end)
+ 
