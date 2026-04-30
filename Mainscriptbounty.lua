@@ -1,3 +1,4 @@
+loadstring(game:HttpGet("https://raw.githubusercontent.com/LeMinh2k12/selenecrack/refs/heads/main/time.lua"))()
 repeat task.wait() until game:IsLoaded()
     and game:GetService("Players")
     and game.Players.LocalPlayer
