@@ -66,11 +66,23 @@ local function inEffectFolder(obj)
     return false
 end
 
-local function isCharacterPart(obj)
+-- Trả về true nếu obj thuộc character của player
+local function isPlayerCharacterPart(obj)
     for _, p in ipairs(Players:GetPlayers()) do
         if p.Character and obj:IsDescendantOf(p.Character) then
             return true
         end
+    end
+    return false
+end
+
+-- Trả về true nếu obj thuộc model có Humanoid (NPC hoặc player)
+local function isLivingModelPart(obj)
+    if isPlayerCharacterPart(obj) then return true end
+    -- Tìm model cha gần nhất
+    local model = obj:FindFirstAncestorOfClass("Model")
+    if model and model:FindFirstChildOfClass("Humanoid") then
+        return true
     end
     return false
 end
@@ -196,10 +208,58 @@ for _, p in ipairs(Players:GetPlayers()) do bindPlayer(p) end
 Players.PlayerAdded:Connect(bindPlayer)
 
 -- ────────────────────────────────────────────────────────────
+-- 4b. NPC (Model có Humanoid, không phải player)
+-- ────────────────────────────────────────────────────────────
+local handledModels = {}
+
+local function handleNPC(model)
+    if handledModels[model] then return end
+    handledModels[model] = true
+
+    local function proc(obj)
+        if isRemoveClass(obj) then
+            task.defer(function() if obj.Parent then obj:Destroy() end end)
+            return
+        end
+        if obj:IsA("BasePart") then
+            obj.Transparency = 1
+            obj.CastShadow   = false
+            stripTextures(obj)
+            makeHitbox(obj, CFG.HITBOX_COLOR)
+        end
+    end
+
+    for _, obj in ipairs(model:GetDescendants()) do proc(obj) end
+    model.DescendantAdded:Connect(function(obj)
+        task.wait()
+        proc(obj)
+    end)
+end
+
+-- Scan NPC hiện có + lắng nghe NPC spawn sau
+local function scanForNPCs(parent)
+    for _, obj in ipairs(parent:GetChildren()) do
+        if obj:IsA("Model") then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            -- Không phải character của player nào
+            local isPlayer = false
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Character == obj then isPlayer = true break end
+            end
+            if hum and not isPlayer then
+                task.spawn(handleNPC, obj)
+            end
+        end
+    end
+end
+
+
+-- ────────────────────────────────────────────────────────────
 -- 5. WORKSPACE  (map + skill/effect)
 -- ────────────────────────────────────────────────────────────
 local function handleObj(obj)
-    if isCharacterPart(obj) then return end
+    -- Bỏ qua part thuộc player character hoặc NPC (xử lý riêng)
+    if isLivingModelPart(obj) then return end
 
     -- Class nhỏ (particle, light…) → xoá
     if isRemoveClass(obj) then
