@@ -1,27 +1,16 @@
--- ============================================================
---  HitboxMode v3  –  LocalScript
---  StarterPlayer > StarterPlayerScripts
--- ============================================================
-
 local RunService = game:GetService("RunService")
 local Players    = game:GetService("Players")
 local Lighting   = game:GetService("Lighting")
-
 local LocalPlayer = Players.LocalPlayer
 
--- ────────────────────────────────────────────────────────────
--- CẤU HÌNH
--- ────────────────────────────────────────────────────────────
 local CFG = {
-    HITBOX_COLOR    = Color3.fromRGB(255, 50,  50),   -- hitbox player khác
-    SELF_COLOR      = Color3.fromRGB(50,  200, 255),  -- hitbox bản thân
-    EFFECT_COLOR    = Color3.fromRGB(255, 210, 0),    -- hitbox skill lớn
+    HITBOX_COLOR    = Color3.fromRGB(255, 50,  50), 
+    SELF_COLOR      = Color3.fromRGB(50,  200, 255),  
+    EFFECT_COLOR    = Color3.fromRGB(255, 210, 0),  
     BOX_THICKNESS   = 0.07,
     BOX_FILL_ALPHA  = 0.80,
-    SMALL_STUDS     = 5,   -- part/effect nhỏ hơn giá trị này (studs) sẽ bị xoá
+    SMALL_STUDS     = 5,   
 }
-
--- Effect nhỏ dạng Instance → xoá luôn
 local REMOVE_CLASSES = {
     "ParticleEmitter","Smoke","Fire","Sparkles",
     "Trail","Beam","BillboardGui","SurfaceGui",
@@ -29,16 +18,12 @@ local REMOVE_CLASSES = {
     "SelectionBox","Highlight","Explosion",
 }
 
--- Folder chứa skill/projectile
 local EFFECT_FOLDERS = {
     "effects","skills","projectiles","spells","abilities",
     "fx","vfx","attacks","bullets","aoes","hitboxes",
     "combat","magic","powers","shots","orbs",
 }
 
--- ────────────────────────────────────────────────────────────
--- HELPERS
--- ────────────────────────────────────────────────────────────
 local function isRemoveClass(obj)
     for _, cls in ipairs(REMOVE_CLASSES) do
         if obj:IsA(cls) then return true end
@@ -66,7 +51,6 @@ local function inEffectFolder(obj)
     return false
 end
 
--- Trả về true nếu obj thuộc character của player
 local function isPlayerCharacterPart(obj)
     for _, p in ipairs(Players:GetPlayers()) do
         if p.Character and obj:IsDescendantOf(p.Character) then
@@ -75,11 +59,8 @@ local function isPlayerCharacterPart(obj)
     end
     return false
 end
-
--- Trả về true nếu obj thuộc model có Humanoid (NPC hoặc player)
 local function isLivingModelPart(obj)
     if isPlayerCharacterPart(obj) then return true end
-    -- Tìm model cha gần nhất
     local model = obj:FindFirstAncestorOfClass("Model")
     if model and model:FindFirstChildOfClass("Humanoid") then
         return true
@@ -87,23 +68,16 @@ local function isLivingModelPart(obj)
     return false
 end
 
--- ────────────────────────────────────────────────────────────
--- 1. LIGHTING – tắt shadow, GIỮ màu sắc bình thường
---    KHÔNG thêm bất kỳ PostEffect nào → không xám màn hình
--- ────────────────────────────────────────────────────────────
 local function applyLighting()
     Lighting.GlobalShadows  = false
     Lighting.ShadowSoftness = 0
 
-    -- Xoá các PostEffect CÓ SẴN (bloom, blur, dof, sunrays, colorcorrection)
-    -- KHÔNG tạo mới → màn hình giữ nguyên màu gốc
     for _, child in ipairs(Lighting:GetChildren()) do
         if child:IsA("PostEffect") then
             child:Destroy()
         end
     end
 
-    -- Ngăn game tự thêm lại PostEffect
     Lighting.ChildAdded:Connect(function(child)
         if child:IsA("PostEffect") then
             task.defer(function()
@@ -115,9 +89,6 @@ local function applyLighting()
     settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
 end
 
--- ────────────────────────────────────────────────────────────
--- 2. XOÁ TEXTURE TRÊN PART (giữ màu + hình dạng gốc)
--- ────────────────────────────────────────────────────────────
 local stripped = {}
 
 local function stripTextures(part)
@@ -136,7 +107,6 @@ local function stripTextures(part)
         end
     end
 
-    -- Chặn game thêm lại texture
     part.DescendantAdded:Connect(function(d)
         if d:IsA("Texture") or d:IsA("Decal") or d:IsA("SurfaceAppearance") then
             task.defer(function() if d.Parent then d:Destroy() end end)
@@ -144,9 +114,6 @@ local function stripTextures(part)
     end)
 end
 
--- ────────────────────────────────────────────────────────────
--- 3. HITBOX
--- ────────────────────────────────────────────────────────────
 local boxes = {}
 
 local function makeHitbox(part, color)
@@ -169,9 +136,6 @@ local function makeHitbox(part, color)
     end)
 end
 
--- ────────────────────────────────────────────────────────────
--- 4. CHARACTER
--- ────────────────────────────────────────────────────────────
 local function handleCharacter(char, isSelf)
     local color = isSelf and CFG.SELF_COLOR or CFG.HITBOX_COLOR
 
@@ -207,9 +171,6 @@ end
 for _, p in ipairs(Players:GetPlayers()) do bindPlayer(p) end
 Players.PlayerAdded:Connect(bindPlayer)
 
--- ────────────────────────────────────────────────────────────
--- 4b. NPC (Model có Humanoid, không phải player)
--- ────────────────────────────────────────────────────────────
 local handledModels = {}
 
 local function handleNPC(model)
@@ -236,12 +197,10 @@ local function handleNPC(model)
     end)
 end
 
--- Scan NPC hiện có + lắng nghe NPC spawn sau
 local function scanForNPCs(parent)
     for _, obj in ipairs(parent:GetChildren()) do
         if obj:IsA("Model") then
             local hum = obj:FindFirstChildOfClass("Humanoid")
-            -- Không phải character của player nào
             local isPlayer = false
             for _, p in ipairs(Players:GetPlayers()) do
                 if p.Character == obj then isPlayer = true break end
@@ -253,15 +212,9 @@ local function scanForNPCs(parent)
     end
 end
 
-
--- ────────────────────────────────────────────────────────────
--- 5. WORKSPACE  (map + skill/effect)
--- ────────────────────────────────────────────────────────────
 local function handleObj(obj)
-    -- Bỏ qua part thuộc player character hoặc NPC (xử lý riêng)
     if isLivingModelPart(obj) then return end
 
-    -- Class nhỏ (particle, light…) → xoá
     if isRemoveClass(obj) then
         task.defer(function() if obj.Parent then obj:Destroy() end end)
         return
@@ -273,8 +226,6 @@ local function handleObj(obj)
             task.defer(function() if obj.Parent then obj:Destroy() end end)
             return
         end
-
-        -- Part nằm trong folder skill → ẩn + hitbox
         if inEffectFolder(obj) then
             obj.Transparency = 1
             obj.CastShadow   = false
@@ -283,7 +234,6 @@ local function handleObj(obj)
             return
         end
 
-        -- Part map thông thường → chỉ xoá texture, giữ màu
         stripTextures(obj)
     end
 end
@@ -297,15 +247,10 @@ workspace.DescendantAdded:Connect(function(obj)
     handleObj(obj)
 end)
 
--- ────────────────────────────────────────────────────────────
--- 6. GIỮ GRAPHICS THẤP
--- ────────────────────────────────────────────────────────────
 RunService.RenderStepped:Connect(function()
     if settings().Rendering.QualityLevel ~= Enum.QualityLevel.Level01 then
         settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
     end
 end)
 
--- ────────────────────────────────────────────────────────────
 applyLighting()
-print("[HitboxMode v3] ✅ Màn hình bình thường | Bỏ texture | Part <5 studs bị xoá | Hitbox rõ")
