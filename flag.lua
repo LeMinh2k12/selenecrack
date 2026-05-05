@@ -1,159 +1,193 @@
 -- ============================================================
---  HitboxMode LocalScript
---  Đặt vào: StarterPlayerScripts hoặc StarterCharacterScripts
+--  HitboxMode v2  –  LocalScript
+--  StarterPlayer > StarterPlayerScripts
 -- ============================================================
 
-local RunService   = game:GetService("RunService")
-local Players      = game:GetService("Players")
-local Lighting     = game:GetService("Lighting")
-local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players    = game:GetService("Players")
+local Lighting   = game:GetService("Lighting")
 
-local LocalPlayer  = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
 
 -- ────────────────────────────────────────────────────────────
 -- CẤU HÌNH
 -- ────────────────────────────────────────────────────────────
-local CONFIG = {
-    SKY_COLOR        = Color3.fromRGB(160, 160, 160),  -- màu bầu trời
-    GROUND_COLOR     = Color3.fromRGB(120, 120, 120),  -- màu mặt đất
-    HITBOX_COLOR     = Color3.fromRGB(255, 60,  60),   -- màu hitbox player khác
-    SELF_COLOR       = Color3.fromRGB(60,  200, 255),  -- màu hitbox bản thân
-    EFFECT_COLOR     = Color3.fromRGB(255, 200, 0),    -- màu hitbox skill/effect
-    BOX_THICKNESS    = 0.08,
-    SHADOW_SOFTNESS  = 0,
-    AMBIENT_BRIGHTNESS = 0.4,
+local CFG = {
+    HITBOX_COLOR     = Color3.fromRGB(255, 50,  50),   -- hitbox player khác
+    SELF_COLOR       = Color3.fromRGB(50,  200, 255),  -- hitbox bản thân
+    EFFECT_COLOR     = Color3.fromRGB(255, 210, 0),    -- hitbox skill lớn
+    BOX_THICKNESS    = 0.07,
+    BOX_FILL_ALPHA   = 0.80,   -- độ trong suốt mặt box (0=đặc, 1=trong)
+}
+
+-- Class effect nhỏ → tự xoá luôn
+local SMALL_EFFECTS = {
+    "ParticleEmitter", "Smoke", "Fire", "Sparkles",
+    "Trail", "Beam", "BillboardGui", "SurfaceGui",
+    "PointLight", "SpotLight", "SurfaceLight",
+    "SelectionBox",  -- xoá box cũ nếu game tự tạo
+    "Highlight",
+    "Explosion",     -- chỉ visual, không cần
+}
+
+-- Class effect lớn (có va chạm) → ẩn + vẽ hitbox
+local BIG_EFFECT_CLASSES = {
+    "Part", "MeshPart", "UnionOperation", "SpecialMesh",
+}
+
+-- Tên folder chứa skill/projectile của game
+local EFFECT_FOLDERS = {
+    "effects","skills","projectiles","spells","abilities",
+    "fx","vfx","attacks","bullets","aoes","hitboxes",
+    "combat","magic","powers","shots","orbs",
 }
 
 -- ────────────────────────────────────────────────────────────
--- 1. ĐỒ HỌA THẤP & BẦU TRỜI XÁM
+-- HELPER
 -- ────────────────────────────────────────────────────────────
-local function applyLowGraphics()
-    -- Tắt mọi hiệu ứng hậu kỳ
-    for _, effect in ipairs(Lighting:GetChildren()) do
-        if effect:IsA("PostEffect") or effect:IsA("Sky") or effect:IsA("Atmosphere") then
-            effect:Destroy()
+local function isSmallEffect(obj)
+    for _, cls in ipairs(SMALL_EFFECTS) do
+        if obj:IsA(cls) then return true end
+    end
+    return false
+end
+
+local function inEffectFolder(obj)
+    local cur = obj.Parent
+    while cur and cur ~= game do
+        local name = cur.Name:lower()
+        for _, tag in ipairs(EFFECT_FOLDERS) do
+            if name == tag or name:find(tag) then return true end
+        end
+        cur = cur.Parent
+    end
+    return false
+end
+
+local function isBigEffect(obj)
+    if not obj:IsA("BasePart") then return false end
+    return inEffectFolder(obj)
+end
+
+local function isCharacterPart(obj)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character and obj:IsDescendantOf(p.Character) then
+            return true
+        end
+    end
+    return false
+end
+
+-- ────────────────────────────────────────────────────────────
+-- 1. LIGHTING – chỉ tắt shadow, GIỮ màu sắc
+-- ────────────────────────────────────────────────────────────
+local function applyLighting()
+    Lighting.GlobalShadows = false
+    Lighting.ShadowSoftness = 0
+
+    -- Xoá chỉ shadow/post-process, GIỮ Sky & Atmosphere (màu sắc bình thường)
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child:IsA("BlurEffect")
+        or child:IsA("DepthOfFieldEffect")
+        or child:IsA("SunRaysEffect")
+        or child:IsA("ColorCorrectionEffect")
+        or child:IsA("BloomEffect") then
+            child:Destroy()
         end
     end
 
-    -- Ánh sáng tối giản
-    Lighting.Brightness         = CONFIG.AMBIENT_BRIGHTNESS
-    Lighting.GlobalShadows      = false
-    Lighting.ShadowSoftness     = CONFIG.SHADOW_SOFTNESS
-    Lighting.Ambient            = Color3.fromRGB(120, 120, 120)
-    Lighting.OutdoorAmbient     = Color3.fromRGB(120, 120, 120)
-    Lighting.FogEnd             = 10000
-    Lighting.FogStart           = 9999
-    Lighting.FogColor           = CONFIG.SKY_COLOR
-    Lighting.ColorShift_Bottom  = Color3.new(0, 0, 0)
-    Lighting.ColorShift_Top     = Color3.new(0, 0, 0)
-    Lighting.EnvironmentDiffuseScale  = 0
-    Lighting.EnvironmentSpecularScale = 0
-
-    -- Đặt màu nền (sky color qua ColorCorrectionEffect)
-    local cc = Instance.new("ColorCorrectionEffect")
-    cc.Brightness = 0
-    cc.Contrast   = 0
-    cc.Saturation = -1   -- desaturate hoàn toàn → xám
-    cc.TintColor  = Color3.fromRGB(200, 200, 200)
-    cc.Parent     = Lighting
-
-    -- Đặt graphics level thấp nhất
+    -- Đồ họa thấp nhất
     settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
 end
 
 -- ────────────────────────────────────────────────────────────
--- 2. XÓA TEXTURE / LÀM TRONG SUỐT TẤT CẢ PART
+-- 2. BỎ TEXTURE TRÊN PART (giữ màu gốc của Part)
 -- ────────────────────────────────────────────────────────────
-local processedParts = {}
+local clearedParts = {}
 
-local function clearPart(part)
+local function stripTextures(part)
     if not part:IsA("BasePart") then return end
-    if processedParts[part] then return end
-    processedParts[part] = true
+    if clearedParts[part] then return end
+    clearedParts[part] = true
 
     part.Material    = Enum.Material.SmoothPlastic
     part.Reflectance = 0
     part.CastShadow  = false
 
-    -- Xóa texture con
     for _, child in ipairs(part:GetChildren()) do
-        if child:IsA("Texture") or child:IsA("Decal") or child:IsA("SpecialMesh") then
+        if child:IsA("Texture") or child:IsA("Decal")
+        or child:IsA("SpecialMesh") or child:IsA("SurfaceAppearance") then
             child:Destroy()
         end
     end
 
-    -- Làm trong suốt (giữ collision)
-    part.Transparency = 1
-end
-
-local function clearModel(model)
-    for _, desc in ipairs(model:GetDescendants()) do
-        clearPart(desc)
-    end
-    model.DescendantAdded:Connect(function(desc)
-        task.wait()
-        clearPart(desc)
+    part.DescendantAdded:Connect(function(d)
+        if d:IsA("Texture") or d:IsA("Decal")
+        or d:IsA("SurfaceAppearance") then
+            task.defer(function() d:Destroy() end)
+        end
     end)
 end
 
 -- ────────────────────────────────────────────────────────────
--- 3. VẼ HITBOX (SelectionBox) CHO PART / MODEL
+-- 3. HITBOX (SelectionBox)
 -- ────────────────────────────────────────────────────────────
-local hitboxes = {} -- part → SelectionBox
+local boxes = {}
 
 local function makeHitbox(part, color)
-    if not part:IsA("BasePart") then return end
-    if hitboxes[part] then return end
-
+    if boxes[part] then return end
     local box = Instance.new("SelectionBox")
-    box.Adornee       = part
-    box.Color3        = color
-    box.LineThickness = CONFIG.BOX_THICKNESS
-    box.SurfaceTransparency = 0.85
-    box.SurfaceColor3 = color
-    box.Parent        = part
-
-    hitboxes[part] = box
+    box.Adornee              = part
+    box.Color3               = color
+    box.LineThickness         = CFG.BOX_THICKNESS
+    box.SurfaceTransparency  = CFG.BOX_FILL_ALPHA
+    box.SurfaceColor3        = color
+    box.Parent               = part
+    boxes[part] = box
 
     part.AncestryChanged:Connect(function()
         if not part:IsDescendantOf(game) then
             box:Destroy()
-            hitboxes[part] = nil
-            processedParts[part] = nil
+            boxes[part] = nil
+            clearedParts[part] = nil
         end
     end)
 end
 
 -- ────────────────────────────────────────────────────────────
--- 4. XỬ LÝ CHARACTER (Player)
+-- 4. XỬ LÝ CHARACTER
 -- ────────────────────────────────────────────────────────────
-local function handleCharacter(character, isSelf)
-    local color = isSelf and CONFIG.SELF_COLOR or CONFIG.HITBOX_COLOR
-    clearModel(character)
+local function handleCharacter(char, isSelf)
+    local color = isSelf and CFG.SELF_COLOR or CFG.HITBOX_COLOR
 
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            makeHitbox(part, color)
+    local function processPart(obj)
+        if obj:IsA("BasePart") then
+            -- Ẩn mesh/skin, chỉ giữ hitbox
+            obj.Transparency = 1
+            obj.CastShadow   = false
+            stripTextures(obj)
+            makeHitbox(obj, color)
+        elseif isSmallEffect(obj) then
+            task.defer(function() if obj.Parent then obj:Destroy() end end)
         end
     end
-    character.DescendantAdded:Connect(function(part)
+
+    for _, obj in ipairs(char:GetDescendants()) do
+        processPart(obj)
+    end
+    char.DescendantAdded:Connect(function(obj)
         task.wait()
-        if part:IsA("BasePart") then
-            clearPart(part)
-            makeHitbox(part, color)
-        end
+        processPart(obj)
     end)
 end
 
--- Bind tất cả player hiện tại & tương lai
 local function bindPlayer(player)
     local isSelf = (player == LocalPlayer)
-
     if player.Character then
-        handleCharacter(player.Character, isSelf)
+        task.spawn(handleCharacter, player.Character, isSelf)
     end
     player.CharacterAdded:Connect(function(char)
-        task.wait(0.1)
+        task.wait(0.05)
         handleCharacter(char, isSelf)
     end)
 end
@@ -162,95 +196,46 @@ for _, p in ipairs(Players:GetPlayers()) do bindPlayer(p) end
 Players.PlayerAdded:Connect(bindPlayer)
 
 -- ────────────────────────────────────────────────────────────
--- 5. XỬ LÝ SKILL / EFFECT (Workspace)
+-- 5. XỬ LÝ WORKSPACE (map + effect)
 -- ────────────────────────────────────────────────────────────
--- Tag tên folder chứa effect của game bạn vào đây
-local EFFECT_TAGS = {
-    "Effects", "Skills", "Projectiles", "Spells",
-    "Abilities", "FX", "VFX", "Attacks",
-}
+local function handleWorkspaceObj(obj)
+    -- Bỏ qua character parts (đã xử lý)
+    if isCharacterPart(obj) then return end
 
-local function isEffectObject(obj)
-    -- Nhận biết qua tên cha hoặc tag
-    local parent = obj.Parent
-    if parent then
-        for _, tag in ipairs(EFFECT_TAGS) do
-            if parent.Name:lower():find(tag:lower()) then return true end
-        end
-    end
-    -- Nhận biết bằng tên object chứa từ khóa
-    local name = obj.Name:lower()
-    for _, tag in ipairs(EFFECT_TAGS) do
-        if name:find(tag:lower()) then return true end
-    end
-    return false
-end
-
-local function handleWorkspaceDesc(obj)
-    if not obj:IsA("BasePart") then return end
-
-    -- Bỏ qua character part (đã xử lý riêng)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Character and obj:IsDescendantOf(p.Character) then return end
+    -- Effect nhỏ → xoá ngay
+    if isSmallEffect(obj) then
+        task.defer(function() if obj.Parent then obj:Destroy() end end)
+        return
     end
 
-    -- Bỏ qua Terrain
-    if obj:IsA("Terrain") then return end
+    -- Effect lớn (part trong folder skill) → ẩn + hitbox vàng
+    if isBigEffect(obj) then
+        obj.Transparency = 1
+        obj.CastShadow   = false
+        stripTextures(obj)
+        makeHitbox(obj, CFG.EFFECT_COLOR)
+        return
+    end
 
-    -- Nếu là effect → hitbox vàng
-    if isEffectObject(obj) then
-        clearPart(obj)
-        makeHitbox(obj, CONFIG.EFFECT_COLOR)
-    else
-        -- Part thông thường (map) → xóa texture, giữ trong suốt nhẹ
-        obj.Material    = Enum.Material.SmoothPlastic
-        obj.Reflectance = 0
-        obj.CastShadow  = false
-        -- Giữ part map nhìn thấy được nhưng xám, không texture
-        obj.Transparency = math.max(obj.Transparency, 0)
-        for _, child in ipairs(obj:GetChildren()) do
-            if child:IsA("Texture") or child:IsA("Decal") then
-                child:Destroy()
-            end
-        end
+    -- Part map thông thường → chỉ xoá texture, GIỮ màu + hình dạng
+    if obj:IsA("BasePart") and not obj:IsA("Terrain") then
+        stripTextures(obj)
     end
 end
 
--- Quét toàn bộ workspace lúc đầu
+-- Quét toàn workspace lúc load
 for _, obj in ipairs(workspace:GetDescendants()) do
-    task.spawn(handleWorkspaceDesc, obj)
+    task.spawn(handleWorkspaceObj, obj)
 end
 
+-- Lắng nghe object mới thêm vào (skill spawn, particle...)
 workspace.DescendantAdded:Connect(function(obj)
-    task.wait()
-    handleWorkspaceDesc(obj)
+    task.wait()         -- đợi 1 frame để parent được gán
+    handleWorkspaceObj(obj)
 end)
 
 -- ────────────────────────────────────────────────────────────
--- 6. XỬ LÝ TERRAIN (mặt đất xám)
--- ────────────────────────────────────────────────────────────
-local function grayTerrain()
-    local terrain = workspace:FindFirstChildOfClass("Terrain")
-    if not terrain then return end
-
-    -- Đặt tất cả màu terrain về xám
-    local grayColor = ColorSequence.new(CONFIG.GROUND_COLOR)
-    terrain.WaterColor    = CONFIG.GROUND_COLOR
-    terrain.WaterWaveSize = 0
-    terrain.WaterWaveSpeed = 0
-    terrain.WaterTransparency = 0
-    terrain.WaterReflectance  = 0
-
-    -- Override material color qua SurfaceAppearance (nếu có)
-    for _, child in ipairs(terrain:GetChildren()) do
-        if child:IsA("SurfaceAppearance") then child:Destroy() end
-    end
-end
-
-grayTerrain()
-
--- ────────────────────────────────────────────────────────────
--- 7. GIỮ SETTINGS ĐỒ HỌA THẤP LIÊN TỤC
+-- 6. GIỮ GRAPHICS THẤP LIÊN TỤC
 -- ────────────────────────────────────────────────────────────
 RunService.RenderStepped:Connect(function()
     if settings().Rendering.QualityLevel ~= Enum.QualityLevel.Level01 then
@@ -259,9 +244,5 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ────────────────────────────────────────────────────────────
--- KHỞI CHẠY
--- ────────────────────────────────────────────────────────────
-applyLowGraphics()
-grayTerrain()
-
-print("[HitboxMode] ✅ Đã bật: Bầu trời xám | Không texture | Đồ họa thấp | Chỉ hiện hitbox")
+applyLighting()
+print("[HitboxMode v2] ✅ Không B&W | Bỏ texture/shadow | Effect nhỏ tự mất | Hitbox rõ")
